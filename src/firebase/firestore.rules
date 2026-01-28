@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------------------------
+    // Helper Functions
+    // ----------------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // ----------------------------------------------------------------------
+    // User Profile & Data Rules
+    // ----------------------------------------------------------------------
+    match /users/{userId} {
+      allow get, update: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      // Disallow listing all users and deleting profiles for security.
+      allow list, delete: if false;
+
+      // --- Subcollection: Daily Data ---
+      match /dailyData/{dailyDataId} {
+        // A user can read their own daily data records.
+        allow read: if isOwner(userId);
+        // A user can write to their own daily data records, ensuring data integrity.
+        allow write: if isOwner(userId) && request.resource.data.userId == userId;
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // Public Leaderboard Rules
+    // ----------------------------------------------------------------------
+    match /leaderboard/{leaderboardId} {
+      // Any signed-in user can read the leaderboard.
+      allow get, list: if isSignedIn();
+      // A user can create their own leaderboard entry if the ID matches their UID.
+      allow create: if isOwner(leaderboardId) && request.resource.data.userId == request.auth.uid;
+      // A user can only update their own leaderboard entry.
+      allow update: if isOwner(leaderboardId);
+      // Deleting leaderboard entries is disallowed.
+      allow delete: if false;
+    }
+  }
+}
