@@ -1,0 +1,286 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user in the EcoTrack application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "User's full name."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "department": {
+          "type": "string",
+          "description": "User's department within the campus."
+        },
+        "campus": {
+          "type": "string",
+          "description": "User's campus."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "department",
+        "campus"
+      ]
+    },
+    "DailyTransport": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DailyTransport",
+      "type": "object",
+      "description": "Represents a user's daily transport details.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the daily transport entry."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N DailyTransport)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the transport entry.",
+          "format": "date-time"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Mode of transport used (Car, Bike, Bus, Walking, Bicycle, EV)."
+        },
+        "distance": {
+          "type": "number",
+          "description": "Distance traveled in kilometers."
+        },
+        "trips": {
+          "type": "number",
+          "description": "Number of trips made."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "mode",
+        "distance",
+        "trips"
+      ]
+    },
+    "Emission": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Emission",
+      "type": "object",
+      "description": "Represents carbon emission data.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the emission record."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Emission)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the emission record.",
+          "format": "date-time"
+        },
+        "emissions": {
+          "type": "number",
+          "description": "Total carbon emissions in kg CO₂."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "emissions"
+      ]
+    },
+    "Point": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Point",
+      "type": "object",
+      "description": "Represents points earned by a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the point record."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Point)"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the points earned.",
+          "format": "date-time"
+        },
+        "points": {
+          "type": "number",
+          "description": "Number of points earned."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "points"
+      ]
+    },
+    "Leaderboard": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Leaderboard",
+      "type": "object",
+      "description": "Represents leaderboard data.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the leaderboard entry."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Leaderboard)"
+        },
+        "department": {
+          "type": "string",
+          "description": "Department of the user."
+        },
+        "campus": {
+          "type": "string",
+          "description": "Campus of the user."
+        },
+        "totalPoints": {
+          "type": "number",
+          "description": "Total points earned by the user."
+        },
+        "dailyPoints": {
+          "type": "number",
+          "description": "Daily points earned by the user."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "department",
+        "campus",
+        "totalPoints",
+        "dailyPoints"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information. Path-based ownership ensures only the user can access their profile.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/dailyTransport/{dailyTransportId}",
+        "definition": {
+          "entityName": "DailyTransport",
+          "schema": {
+            "$ref": "#/backend/entities/DailyTransport"
+          },
+          "description": "Stores daily transport data for each user.  Path-based ownership ensures only the user can access their transport data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "dailyTransportId",
+              "description": "The unique identifier for the daily transport entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/emissions/{emissionId}",
+        "definition": {
+          "entityName": "Emission",
+          "schema": {
+            "$ref": "#/backend/entities/Emission"
+          },
+          "description": "Stores carbon emission data for each user. Path-based ownership ensures only the user can access their emissions data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "emissionId",
+              "description": "The unique identifier for the emission record."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/points/{pointId}",
+        "definition": {
+          "entityName": "Point",
+          "schema": {
+            "$ref": "#/backend/entities/Point"
+          },
+          "description": "Stores points earned by each user. Path-based ownership ensures only the user can access their points data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "pointId",
+              "description": "The unique identifier for the point record."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/leaderboard/{leaderboardId}",
+        "definition": {
+          "entityName": "Leaderboard",
+          "schema": {
+            "$ref": "#/backend/entities/Leaderboard"
+          },
+          "description": "Stores leaderboard data. Includes 'userId', 'department', and 'campus' for authorization independence during leaderboard queries.",
+          "params": [
+            {
+              "name": "leaderboardId",
+              "description": "The unique identifier for the leaderboard entry."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to be secure, scalable, and debuggable, adhering to the principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters). It leverages denormalization, structural segregation, and consistent access modeling.  User data and related entities (DailyTransport, Emission, Point) are stored under the `/users/{userId}` path to establish clear ownership. Leaderboard data is stored in a separate collection for efficient querying and aggregation.\n\nAuthorization Independence: The structure ensures authorization independence by avoiding `get()` calls in security rules. Each document under `/users/{userId}` is implicitly owned by the user identified by `{userId}`. The Leaderboard document stores the `userId`, `department`, and `campus`, eliminating the need to fetch User data for authorization rules or leaderboard queries.\n\nQAPs Support:  The segregation of user-specific data under `/users/{userId}` enables secure `list` operations. Rules can easily restrict access to a user's own data without filtering based on document content."
+  }
+}
