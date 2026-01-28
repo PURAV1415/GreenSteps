@@ -29,8 +29,8 @@ export default function DashboardPage() {
 
   // Memoize Firestore references
   const dailyDataRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'users', authUser.uid, 'dailyData'), orderBy('date', 'desc'), limit(7)) : null, [authUser, firestore]);
-  const departmentLeaderboardRef = useMemoFirebase(() => (authUser && user) ? query(collection(firestore, 'leaderboard'), where('department', '==', user.department), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore, user]);
-  const campusLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard'), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore]);
+  const departmentLeaderboardRef = useMemoFirebase(() => (authUser && user) ? query(collection(firestore, 'leaderboard'), where('department', '==', user.department)) : null, [authUser, firestore, user]);
+  const campusLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard')) : null, [authUser, firestore]);
 
   // Fetch data from Firestore
   const { data: dailyHistory, isLoading: isHistoryLoading } = useCollection<DailyData>(dailyDataRef);
@@ -105,7 +105,11 @@ export default function DashboardPage() {
   };
   
   const departmentLeaderboard = useMemo(() => {
-    return departmentLeaderboardData?.map((u, i) => ({ ...u, rank: i + 1, isCurrentUser: u.id === authUser?.uid })) ?? [];
+    if (!departmentLeaderboardData) return [];
+    return departmentLeaderboardData
+      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .slice(0, 10)
+      .map((u, i) => ({ ...u, rank: i + 1, isCurrentUser: u.id === authUser?.uid }));
   }, [departmentLeaderboardData, authUser]);
 
   const campusLeaderboard = useMemo(() => {
