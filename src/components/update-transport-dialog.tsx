@@ -18,7 +18,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TRANSPORT_MODES } from '@/lib/constants';
-import type { TransportMode } from '@/lib/types';
+import type { DailyData, TransportMode } from '@/lib/types';
+import { useEffect } from 'react';
 
 const transportSchema = z.object({
   mode: z.custom<TransportMode>(val => TRANSPORT_MODES.includes(val as TransportMode), {
@@ -32,6 +33,7 @@ type UpdateTransportDialogProps = {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   onSubmit: (values: z.infer<typeof transportSchema>) => void;
+  initialValues?: DailyData | null;
 };
 
 const transportIcons: { [key in TransportMode]: React.ElementType } = {
@@ -43,18 +45,34 @@ const transportIcons: { [key in TransportMode]: React.ElementType } = {
   EV: Zap,
 };
 
-export function UpdateTransportDialog({ isOpen, setIsOpen, onSubmit }: UpdateTransportDialogProps) {
+export function UpdateTransportDialog({ isOpen, setIsOpen, onSubmit, initialValues }: UpdateTransportDialogProps) {
   const form = useForm<z.infer<typeof transportSchema>>({
     resolver: zodResolver(transportSchema),
     defaultValues: {
-      distance: 0,
-      trips: 1,
+      mode: initialValues?.mode,
+      distance: initialValues?.distance ?? 0,
+      trips: initialValues?.trips ?? 1,
     },
   });
 
+  useEffect(() => {
+    if (initialValues) {
+      form.reset({
+        mode: initialValues.mode,
+        distance: initialValues.distance,
+        trips: initialValues.trips,
+      });
+    } else {
+       form.reset({
+        distance: 0,
+        trips: 1,
+      });
+    }
+  }, [initialValues, form]);
+
+
   const handleFormSubmit = (values: z.infer<typeof transportSchema>) => {
     onSubmit(values);
-    form.reset();
   };
 
   return (
@@ -74,7 +92,7 @@ export function UpdateTransportDialog({ isOpen, setIsOpen, onSubmit }: UpdateTra
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Mode of transport</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a mode" />

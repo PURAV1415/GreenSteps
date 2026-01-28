@@ -8,28 +8,31 @@ export type User = {
   campus: string;
   totalPoints: number;
   totalEmissions: number;
-  dailyPoints: number;
-  dailyEmissions: number;
   streak: number;
   milestones: {
     walked: number;
     cycled: number;
   };
-  todayTransportMode: TransportMode | null;
 };
 
 export type DailyData = {
   date: string; // YYYY-MM-DD
   emissions: number;
   points: number;
+  mode: TransportMode;
+  distance: number;
+  trips: number;
 };
 
 export type LeaderboardUser = {
+  id: string;
   rank: number;
   name: string;
   totalPoints: number;
   dailyPoints: number;
   isCurrentUser: boolean;
+  department: string;
+  campus: string;
 };
 
 export type LeaderboardDepartment = {

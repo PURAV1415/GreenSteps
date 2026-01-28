@@ -2,182 +2,40 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * Core Philosophy: This ruleset enforces a strict user-ownership model.
-     * All personal data, including transport logs, emissions, and points, is
-     * nested within a user's private document tree, making it accessible only
-     * to the authenticated owner. Publicly visible data, like the leaderboard,
-     * is stored in a separate top-level collection with public read access
-     * and owner-only write controls.
-     *
-     * Data Structure: All private user data is organized hierarchically under
-     * `/users/{userId}`. This structure includes the user's profile and
-     * subcollections for `dailyTransport`, `emissions`, and `points`.
-     * The `/leaderboard` collection is maintained at the root level for
-     * efficient public querying.
-     *
-     * Key Security Decisions:
-     * - User Listing Disabled: It is not possible to query the list of all users.
-     * - Strict Ownership: A user can only access data located under their
-     *   own `/users/{userId}` path.
-     * - Public Leaderboard: The leaderboard is readable by anyone, but users can
-     *   only create, update, or delete their own entry.
-     * - Relational Integrity: Rules ensure that when a document is created
-     *   within a user's data tree (e.g., a new transport entry), its internal
-     *   `userId` field must match the user ID from the path, creating a secure link.
-     *
-     * Denormalization for Authorization: The `/leaderboard/{leaderboardId}`
-     * document contains a denormalized `userId` field. This allows write
-     * operations to be authorized with a simple check on the document itself,
-     * avoiding slow and costly `get()` calls to other documents.
-     *
-     * Structural Segregation: Private user data (`/users/{userId}/*`) and
-     * public data (`/leaderboard`) are stored in separate collections. This is
-     * a secure and performant pattern that prevents accidental exposure of
-     * private data in public list queries.
-     */
-
     // ----------------------------------------------------------------------
     // Helper Functions
     // ----------------------------------------------------------------------
-
-    /**
-     * Returns true if the user is authenticated.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * Returns true if the requesting user's UID matches the given userId.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * Returns true if the document exists and the requesting user is the owner.
-     * Used for safe update and delete operations.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     
-    /**
-     * Validates that the `id` field of a new User profile matches the document ID.
-     */
-    function createsOwnProfile(userId) {
-      return request.resource.data.id == userId;
-    }
-
-    /**
-     * Validates that the `id` field of a User profile is immutable on update.
-     */
-    function maintainsOwnProfile() {
-      return request.resource.data.id == resource.data.id;
-    }
-
-    /**
-     * Validates that a new subcollection document's `userId` field matches the
-     * owner's ID from the path. Enforces relational integrity on create.
-     */
-    function createsOwnSubcollectionDoc(userId) {
-      return request.resource.data.userId == userId;
-    }
-
-    /**
-     * Validates that a subcollection document's `userId` field is immutable
-     * on update, preventing reassignment.
-     */
-    function maintainsSubcollectionOwnership() {
-      return request.resource.data.userId == resource.data.userId;
-    }
-
     // ----------------------------------------------------------------------
-    // User Profile Rules
+    // User Profile & Data Rules
     // ----------------------------------------------------------------------
-
-    /**
-     * @description Users can create, read, and manage their own profile document.
-     * @path /users/{userId}
-     * @allow (create) An authenticated user creating their own profile document.
-     * @deny (create) An authenticated user trying to create a profile for someone else.
-     * @principle Enforces Self-Creation and Ownership for a user's root document.
-     */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false; // Disallow listing all users for security.
-      allow create: if isOwner(userId) && createsOwnProfile(userId);
-      allow update: if isExistingOwner(userId) && maintainsOwnProfile();
-      allow delete: if isExistingOwner(userId);
+      allow get, update: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      // Disallow listing all users and deleting profiles for security.
+      allow list, delete: if false;
+
+      // --- Subcollection: Daily Data ---
+      match /dailyData/{dailyDataId} {
+        // A user can manage their own daily data records.
+        allow read, write: if isOwner(userId) && request.resource.data.userId == userId;
+      }
     }
 
     // ----------------------------------------------------------------------
-    // User Subcollection Rules
+    // Public Leaderboard Rules
     // ----------------------------------------------------------------------
-
-    /**
-     * @description A user can manage their own daily transport records.
-     * @path /users/{userId}/dailyTransport/{dailyTransportId}
-     * @allow (create) User 'user_abc' creating a transport record under '/users/user_abc/dailyTransport/...'.
-     * @deny (get) User 'user_xyz' trying to read a record under '/users/user_abc/dailyTransport/...'.
-     * @principle Restricts access to a user's own data tree and validates relational integrity.
-     */
-    match /users/{userId}/dailyTransport/{dailyTransportId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && createsOwnSubcollectionDoc(userId);
-      allow update: if isExistingOwner(userId) && maintainsSubcollectionOwnership();
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description A user can manage their own emission records.
-     * @path /users/{userId}/emissions/{emissionId}
-     * @allow (list) User 'user_abc' listing their own records at '/users/user_abc/emissions'.
-     * @deny (update) User 'user_xyz' trying to update a record at '/users/user_abc/emissions/...'.
-     * @principle Restricts access to a user's own data tree and validates relational integrity.
-     */
-    match /users/{userId}/emissions/{emissionId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && createsOwnSubcollectionDoc(userId);
-      allow update: if isExistingOwner(userId) && maintainsSubcollectionOwnership();
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description A user can manage their own point records.
-     * @path /users/{userId}/points/{pointId}
-     * @allow (delete) User 'user_abc' deleting their own point record at '/users/user_abc/points/...'.
-     * @deny (create) User 'user_abc' creating a record where the inner `userId` field is 'user_xyz'.
-     * @principle Restricts access to a user's own data tree and validates relational integrity.
-     */
-    match /users/{userId}/points/{pointId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && createsOwnSubcollectionDoc(userId);
-      allow update: if isExistingOwner(userId) && maintainsSubcollectionOwnership();
-      allow delete: if isExistingOwner(userId);
-    }
-
-    // ----------------------------------------------------------------------
-    // Public Collection Rules
-    // ----------------------------------------------------------------------
-
-    /**
-     * @description Leaderboard is public to read, but users can only manage their own entry.
-     * @path /leaderboard/{leaderboardId}
-     * @allow (list) Any user, signed in or not, can list all leaderboard entries.
-     * @deny (update) A signed-in user trying to change the leaderboard entry of another user.
-     * @principle Implements a "Public Read with Owner-Only Writes" pattern using a denormalized `userId` field.
-     */
     match /leaderboard/{leaderboardId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if resource != null && isOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
-      allow delete: if resource != null && isOwner(resource.data.userId);
+      // Anyone can read the leaderboard.
+      allow get, list: if true;
+      // A user can create their own leaderboard entry if the ID matches their UID.
+      allow create: if isOwner(leaderboardId) && request.resource.data.userId == request.auth.uid;
+      // A user can only update their own leaderboard entry.
+      allow update: if isOwner(leaderboardId);
+      // Deleting leaderboard entries is disallowed.
+      allow delete: if false;
     }
   }
 }

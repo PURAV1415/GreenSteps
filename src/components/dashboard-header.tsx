@@ -18,12 +18,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useAuth } from '@/firebase';
+
 
 export function DashboardHeader() {
   const router = useRouter();
+  const auth = useAuth();
 
   const handleLogout = () => {
-    // In a real app, you'd clear the user session here
+    auth.signOut();
     router.push('/');
   };
 

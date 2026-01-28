@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UpdateTransportDialog } from '@/components/update-transport-dialog';
@@ -10,58 +10,82 @@ import { ComparisonChart } from '@/components/comparison-chart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Flame, Star, Milestone, Bot, Trophy, Users, Leaf, Route } from 'lucide-react';
+import { doc, collection, query, orderBy, limit, where } from 'firebase/firestore';
 
-import { Flame, Star, Milestone, Bot, Trophy, Users, TrendingUp, Leaf, Route } from 'lucide-react';
-
+import { useFirebase, useUser, useDoc, useCollection, updateDocumentNonBlocking, setDocumentNonBlocking, useMemoFirebase } from '@/firebase';
 import type { User, DailyData, LeaderboardUser, LeaderboardDepartment, TransportMode } from '@/lib/types';
-import { mockUser, mockDailyHistory, mockDepartmentLeaderboard, mockCampusLeaderboard } from '@/lib/mock-data';
 import { EMISSION_FACTORS } from '@/lib/constants';
 
 import { fetchEcoRecommendations } from './actions';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [dailyHistory, setDailyHistory] = useState<DailyData[]>([]);
-  const [departmentLeaderboard, setDepartmentLeaderboard] = useState<LeaderboardUser[]>([]);
-  const [campusLeaderboard, setCampusLeaderboard] = useState<LeaderboardDepartment[]>([]);
+  const { firestore } = useFirebase();
+  const { user: authUser, isUserLoading: isAuthUserLoading } = useUser();
+
+  // Memoize Firestore references
+  const userProfileRef = useMemoFirebase(() => authUser ? doc(firestore, 'users', authUser.uid) : null, [authUser, firestore]);
+  const dailyDataRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'users', authUser.uid, 'dailyData'), orderBy('date', 'desc'), limit(7)) : null, [authUser, firestore]);
+  const departmentLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard'), where('department', '==', 'Computer Science'), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore]);
+  const campusLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard'), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore]);
+
+  // Fetch data from Firestore
+  const { data: user, isLoading: isUserLoading } = useDoc<User>(userProfileRef);
+  const { data: dailyHistory, isLoading: isHistoryLoading } = useCollection<DailyData>(dailyDataRef);
+  const { data: departmentLeaderboardData, isLoading: isDeptLeaderboardLoading } = useCollection<LeaderboardUser>(departmentLeaderboardRef);
+  const { data: campusLeaderboardData, isLoading: isCampusLeaderboardLoading } = useCollection<LeaderboardUser>(campusLeaderboardRef);
+
   const [isUpdateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
+  
+  const today = new Date().toISOString().split('T')[0];
+  const todaysData = dailyHistory?.find(d => d.date === today);
 
-  useEffect(() => {
-    setUser(mockUser);
-    setDailyHistory(mockDailyHistory);
-    setDepartmentLeaderboard(mockDepartmentLeaderboard);
-    setCampusLeaderboard(mockCampusLeaderboard);
-  }, []);
+  const dailyEmissions = todaysData?.emissions ?? 0;
+  const dailyPoints = todaysData?.points ?? 0;
+  const todayTransportMode = todaysData?.mode ?? null;
 
   const handleUpdateTransport = async (data: { mode: TransportMode, distance: number, trips: number }) => {
-    if (!user) return;
+    if (!user || !authUser) return;
     
     const emissionFactor = EMISSION_FACTORS[data.mode];
     const newDailyEmissions = data.distance * emissionFactor * data.trips;
     const newDailyPoints = Math.max(0, Math.round((1 / (newDailyEmissions + 0.1)) * 50));
-    
-    const updatedUser: User = {
-      ...user,
-      todayTransportMode: data.mode,
-      dailyEmissions: parseFloat(newDailyEmissions.toFixed(2)),
-      dailyPoints: newDailyPoints,
-      totalEmissions: parseFloat((user.totalEmissions + newDailyEmissions).toFixed(2)),
-      totalPoints: user.totalPoints + newDailyPoints,
-    };
-    setUser(updatedUser);
 
-    const today = new Date().toISOString().split('T')[0];
-    const existingEntryIndex = dailyHistory.findIndex(d => d.date === today);
-    if (existingEntryIndex > -1) {
-      const newHistory = [...dailyHistory];
-      newHistory[existingEntryIndex] = { date: today, emissions: newDailyEmissions, points: newDailyPoints };
-      setDailyHistory(newHistory);
-    } else {
-      setDailyHistory([...dailyHistory, { date: today, emissions: newDailyEmissions, points: newDailyPoints }]);
-    }
-    
+    // Calculate differences from today's existing data
+    const oldDailyEmissions = todaysData?.emissions ?? 0;
+    const oldDailyPoints = todaysData?.points ?? 0;
+    const emissionsDiff = newDailyEmissions - oldDailyEmissions;
+    const pointsDiff = newDailyPoints - oldDailyPoints;
+
+    // Update user profile totals
+    const userRef = doc(firestore, 'users', authUser.uid);
+    updateDocumentNonBlocking(userRef, {
+      totalEmissions: (user.totalEmissions || 0) + emissionsDiff,
+      totalPoints: (user.totalPoints || 0) + pointsDiff,
+    });
+
+    // Create/update today's daily data
+    const dailyDataRef = doc(firestore, 'users', authUser.uid, 'dailyData', today);
+    setDocumentNonBlocking(dailyDataRef, {
+      userId: authUser.uid,
+      date: today,
+      mode: data.mode,
+      distance: data.distance,
+      trips: data.trips,
+      emissions: newDailyEmissions,
+      points: newDailyPoints,
+    }, { merge: true });
+
+    // Update leaderboard
+    const leaderboardRef = doc(firestore, 'leaderboard', authUser.uid);
+    updateDocumentNonBlocking(leaderboardRef, {
+      totalPoints: (user.totalPoints || 0) + pointsDiff,
+      dailyPoints: newDailyPoints
+    });
+
     setUpdateDialogOpen(false);
     setIsLoadingRecs(true);
     try {
@@ -70,7 +94,7 @@ export default function DashboardPage() {
         distanceTraveled: data.distance,
         numberOfTrips: data.trips,
         dailyEmissions: newDailyEmissions,
-        totalPoints: updatedUser.totalPoints,
+        totalPoints: (user.totalPoints || 0) + pointsDiff,
         dailyPoints: newDailyPoints,
       });
       setRecommendations(recs);
@@ -78,9 +102,42 @@ export default function DashboardPage() {
       setIsLoadingRecs(false);
     }
   };
+  
+  const departmentLeaderboard = useMemo(() => {
+    return departmentLeaderboardData?.map((u, i) => ({ ...u, rank: i + 1, isCurrentUser: u.id === authUser?.uid })) ?? [];
+  }, [departmentLeaderboardData, authUser]);
 
+  const campusLeaderboard = useMemo(() => {
+    if (!campusLeaderboardData) return [];
+    const departmentTotals: Record<string, number> = {};
+    campusLeaderboardData.forEach(user => {
+        departmentTotals[user.department] = (departmentTotals[user.department] || 0) + user.totalPoints;
+    });
+    return Object.entries(departmentTotals)
+        .sort(([, a], [, b]) => b - a)
+        .map(([department, totalPoints], i) => ({ rank: i + 1, department, totalPoints }));
+  }, [campusLeaderboardData]);
+
+
+  if (isAuthUserLoading || isUserLoading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-4 md:grid-cols-2 md:gap-8 lg:grid-cols-4">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-28" />
+            <Skeleton className="h-28" />
+            <Skeleton className="h-28" />
+        </div>
+        <div className="grid gap-4 md:gap-8 lg:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-64 xl:col-span-2" />
+          <Skeleton className="h-64" />
+        </div>
+      </div>
+    );
+  }
+  
   if (!user) {
-    return <div>Loading...</div>;
+     return <div>User not found. Try signing up again.</div>;
   }
 
   return (
@@ -97,7 +154,7 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">{user.department}, {user.campus}</p>
             <div className="mt-4 flex items-center gap-2">
               <Route className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Today's Mode: <strong>{user.todayTransportMode || 'Not set'}</strong></span>
+              <span className="text-sm">Today's Mode: <strong>{todayTransportMode || 'Not set'}</strong></span>
             </div>
           </CardContent>
           <CardFooter>
@@ -111,8 +168,8 @@ export default function DashboardPage() {
             <Flame className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{user.dailyEmissions} kg CO₂</div>
-            <p className="text-xs text-muted-foreground">Total: {user.totalEmissions} kg CO₂</p>
+            <div className="text-2xl font-bold">{dailyEmissions.toFixed(2)} kg CO₂</div>
+            <p className="text-xs text-muted-foreground">Total: {user.totalEmissions.toFixed(2)} kg CO₂</p>
           </CardContent>
         </Card>
         
@@ -122,7 +179,7 @@ export default function DashboardPage() {
             <Star className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-accent-foreground">{user.dailyPoints}</div>
+            <div className="text-2xl font-bold text-accent-foreground">{dailyPoints}</div>
             <p className="text-xs text-muted-foreground">Total: {user.totalPoints} points</p>
           </CardContent>
         </Card>
@@ -183,7 +240,7 @@ export default function DashboardPage() {
              <CardDescription>Points earned over the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent>
-            <PointsChart data={dailyHistory} />
+            {isHistoryLoading ? <Skeleton className="h-[250px]"/> : <PointsChart data={dailyHistory ?? []} />}
           </CardContent>
         </Card>
 
@@ -199,46 +256,50 @@ export default function DashboardPage() {
                 <TabsTrigger value="campus"><Trophy className="mr-2 h-4 w-4"/>Campus</TabsTrigger>
               </TabsList>
               <TabsContent value="department">
-                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Rank</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right">Total Points</TableHead>
-                      <TableHead className="text-right">Daily Points</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {departmentLeaderboard.map((u) => (
-                      <TableRow key={u.rank} className={u.isCurrentUser ? 'bg-accent/50' : ''}>
-                        <TableCell className="font-medium">{u.rank}</TableCell>
-                        <TableCell>{u.name} {u.isCurrentUser && "(You)"}</TableCell>
-                        <TableCell className="text-right">{u.totalPoints}</TableCell>
-                        <TableCell className="text-right">{u.dailyPoints}</TableCell>
+                {isDeptLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Rank</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="text-right">Total Points</TableHead>
+                        <TableHead className="text-right">Daily Points</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {departmentLeaderboard.map((u) => (
+                        <TableRow key={u.id} className={u.isCurrentUser ? 'bg-accent/50' : ''}>
+                          <TableCell className="font-medium">{u.rank}</TableCell>
+                          <TableCell>{u.name} {u.isCurrentUser && "(You)"}</TableCell>
+                          <TableCell className="text-right">{u.totalPoints}</TableCell>
+                          <TableCell className="text-right">{u.dailyPoints}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </TabsContent>
               <TabsContent value="campus">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Rank</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Total Points</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {campusLeaderboard.map((d) => (
-                      <TableRow key={d.rank} className={d.department === user.department ? 'bg-accent/50' : ''}>
-                        <TableCell className="font-medium">{d.rank}</TableCell>
-                        <TableCell>{d.department}</TableCell>
-                        <TableCell className="text-right">{d.totalPoints}</TableCell>
+                 {isCampusLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Rank</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead className="text-right">Total Points</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {campusLeaderboard.map((d) => (
+                        <TableRow key={d.rank} className={d.department === user.department ? 'bg-accent/50' : ''}>
+                          <TableCell className="font-medium">{d.rank}</TableCell>
+                          <TableCell>{d.department}</TableCell>
+                          <TableCell className="text-right">{d.totalPoints}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -250,7 +311,7 @@ export default function DashboardPage() {
             <CardDescription>Your CO₂ emissions over the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent>
-            <EmissionsChart data={dailyHistory} />
+            {isHistoryLoading ? <Skeleton className="h-[250px]"/> : <EmissionsChart data={dailyHistory ?? []} />}
           </CardContent>
         </Card>
         
@@ -290,7 +351,7 @@ export default function DashboardPage() {
             <CardDescription>Your emissions vs. department and campus averages.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ComparisonChart personal={user.dailyEmissions} />
+            <ComparisonChart personal={dailyEmissions} />
           </CardContent>
         </Card>
 
@@ -299,6 +360,7 @@ export default function DashboardPage() {
         isOpen={isUpdateDialogOpen}
         setIsOpen={setUpdateDialogOpen}
         onSubmit={handleUpdateTransport}
+        initialValues={todaysData}
       />
     </>
   );

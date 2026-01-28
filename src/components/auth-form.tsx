@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Leaf, Mail, Lock, User, Building, MapPin, Bike, Bus, Car, Zap, Footprints } from 'lucide-react';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc } from 'firebase/firestore';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +16,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DEPARTMENTS, CAMPUSES, TRANSPORT_MODES } from '@/lib/constants';
+import { DEPARTMENTS, CAMPUSES, TRANSPORT_MODES, EMISSION_FACTORS } from '@/lib/constants';
+import { useAuth, useFirestore, initiateEmailSignIn, setDocumentNonBlocking } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
+import type { TransportMode } from '@/lib/types';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email.' }),
@@ -32,12 +37,18 @@ const signupSchema = z.object({
 const transportSchema = z.object({
   mode: z.string().min(1, { message: 'Please select a transport mode.' }),
   distance: z.coerce.number().min(0, { message: 'Distance cannot be negative.' }),
-  frequency: z.coerce.number().min(0, { message: 'Frequency cannot be negative.' }),
+  trips: z.coerce.number().min(1, { message: 'At least one trip is required.' }),
 });
 
 export function AuthForm() {
   const router = useRouter();
+  const auth = useAuth();
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  
   const [isTransportDialogOpen, setIsTransportDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [signupData, setSignupData] = useState<z.infer<typeof signupSchema> | null>(null);
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -51,23 +62,89 @@ export function AuthForm() {
   
   const transportForm = useForm<z.infer<typeof transportSchema>>({
     resolver: zodResolver(transportSchema),
-    defaultValues: { mode: '', distance: 0, frequency: 0 },
+    defaultValues: { mode: 'Walking', distance: 1, trips: 1 },
   });
 
   const onLoginSubmit = (values: z.infer<typeof loginSchema>) => {
-    console.log('Login values:', values);
+    initiateEmailSignIn(auth, values.email, values.password);
     router.push('/dashboard');
   };
 
   const onSignupSubmit = (values: z.infer<typeof signupSchema>) => {
-    console.log('Signup values:', values);
+    setSignupData(values);
     setIsTransportDialogOpen(true);
   };
   
-  const onTransportSubmit = (values: z.infer<typeof transportSchema>) => {
-    console.log('Transport values:', values);
-    setIsTransportDialogOpen(false);
-    router.push('/dashboard');
+  const onTransportSubmit = async (transportValues: z.infer<typeof transportSchema>) => {
+    if (!signupData) return;
+    setIsLoading(true);
+
+    try {
+      // 1. Create user
+      const userCredential = await createUserWithEmailAndPassword(auth, signupData.email, signupData.password);
+      const user = userCredential.user;
+
+      // 2. Calculate initial daily data
+      const emissionFactor = EMISSION_FACTORS[transportValues.mode as TransportMode];
+      const initialDailyEmissions = transportValues.distance * emissionFactor * transportValues.trips;
+      const initialDailyPoints = Math.max(0, Math.round((1 / (initialDailyEmissions + 0.1)) * 50));
+      const today = new Date().toISOString().split('T')[0];
+
+      // 3. Create user document
+      const userRef = doc(firestore, 'users', user.uid);
+      const newUserDoc = {
+          id: user.uid,
+          name: signupData.name,
+          email: signupData.email,
+          department: signupData.department,
+          campus: signupData.campus,
+          totalPoints: initialDailyPoints,
+          totalEmissions: parseFloat(initialDailyEmissions.toFixed(2)),
+          streak: 0,
+          milestones: { walked: 0, cycled: 0 },
+      };
+      setDocumentNonBlocking(userRef, newUserDoc, {});
+
+      // 4. Create first daily data document
+      const dailyDataRef = doc(firestore, 'users', user.uid, 'dailyData', today);
+      const newDailyData = {
+          userId: user.uid,
+          date: today,
+          mode: transportValues.mode,
+          distance: transportValues.distance,
+          trips: transportValues.trips,
+          emissions: initialDailyEmissions,
+          points: initialDailyPoints,
+      };
+      setDocumentNonBlocking(dailyDataRef, newDailyData, {});
+      
+      // 5. Create leaderboard entry
+      const leaderboardRef = doc(firestore, 'leaderboard', user.uid);
+      const newLeaderboardEntry = {
+        id: user.uid,
+        userId: user.uid,
+        name: signupData.name,
+        department: signupData.department,
+        campus: signupData.campus,
+        totalPoints: initialDailyPoints,
+        dailyPoints: initialDailyPoints,
+      };
+      setDocumentNonBlocking(leaderboardRef, newLeaderboardEntry, {});
+
+      // 6. Navigate
+      setIsTransportDialogOpen(false);
+      router.push('/dashboard');
+
+    } catch (error: any) {
+      console.error("Signup Error:", error);
+      toast({
+        variant: "destructive",
+        title: "Signup Failed",
+        description: error.message || "An unexpected error occurred.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const transportIcons: { [key: string]: React.ElementType } = {
@@ -274,7 +351,7 @@ export function AuthForm() {
                   name="distance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Average distance per day (km)</FormLabel>
+                      <FormLabel>Average one-way distance (km)</FormLabel>
                       <FormControl><Input type="number" placeholder="e.g., 10" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -282,17 +359,19 @@ export function AuthForm() {
                 />
                  <FormField
                   control={transportForm.control}
-                  name="frequency"
+                  name="trips"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Frequency of trips per week</FormLabel>
-                      <FormControl><Input type="number" placeholder="e.g., 5" {...field} /></FormControl>
+                      <FormLabel>Number of round trips per day</FormLabel>
+                      <FormControl><Input type="number" placeholder="e.g., 1" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               <DialogFooter>
-                <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">Save and Continue</Button>
+                <Button type="submit" disabled={isLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                  {isLoading ? 'Saving...' : 'Save and Continue'}
+                </Button>
               </DialogFooter>
             </form>
           </Form>
