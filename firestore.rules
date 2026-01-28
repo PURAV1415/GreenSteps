@@ -30,8 +30,9 @@ service cloud.firestore {
     // Public Leaderboard Rules
     // ----------------------------------------------------------------------
     match /leaderboard/{leaderboardId} {
-      // Any signed-in user can read the leaderboard.
-      allow get, list: if isSignedIn();
+      // Any signed-in user can read (get, list) the leaderboard collection.
+      // This is required for the public leaderboards to function.
+      allow read: if request.auth != null;
       // A user can create their own leaderboard entry if the ID matches their UID.
       allow create: if isOwner(leaderboardId) && request.resource.data.userId == request.auth.uid;
       // A user can only update their own leaderboard entry.

@@ -24,14 +24,15 @@ export default function DashboardPage() {
   const { firestore } = useFirebase();
   const { user: authUser, isUserLoading: isAuthUserLoading } = useUser();
 
-  // Memoize Firestore references
   const userProfileRef = useMemoFirebase(() => authUser ? doc(firestore, 'users', authUser.uid) : null, [authUser, firestore]);
+  const { data: user, isLoading: isUserLoading } = useDoc<User>(userProfileRef);
+
+  // Memoize Firestore references
   const dailyDataRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'users', authUser.uid, 'dailyData'), orderBy('date', 'desc'), limit(7)) : null, [authUser, firestore]);
-  const departmentLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard'), where('department', '==', 'Computer Science'), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore]);
+  const departmentLeaderboardRef = useMemoFirebase(() => (authUser && user) ? query(collection(firestore, 'leaderboard'), where('department', '==', user.department), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore, user]);
   const campusLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard'), orderBy('totalPoints', 'desc'), limit(10)) : null, [authUser, firestore]);
 
   // Fetch data from Firestore
-  const { data: user, isLoading: isUserLoading } = useDoc<User>(userProfileRef);
   const { data: dailyHistory, isLoading: isHistoryLoading } = useCollection<DailyData>(dailyDataRef);
   const { data: departmentLeaderboardData, isLoading: isDeptLeaderboardLoading } = useCollection<LeaderboardUser>(departmentLeaderboardRef);
   const { data: campusLeaderboardData, isLoading: isCampusLeaderboardLoading } = useCollection<LeaderboardUser>(campusLeaderboardRef);
