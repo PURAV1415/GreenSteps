@@ -11,5 +11,5 @@ export const EMISSION_FACTORS: Record<TransportMode, number> = {
 
 export const TRANSPORT_MODES: TransportMode[] = ['Car', 'Bike', 'Bus', 'Walking', 'Bicycle', 'EV'];
 
-export const DEPARTMENTS = ["Computer Science", "Business", "Arts & Humanities", "Engineering", "Medicine"];
+export const DEPARTMENTS = ["CSE", "CSM", "CSD", "ECE", "EEE", "MECH"];
 export const CAMPUSES = ["Main Campus", "South Campus", "Online", "North Campus"];
