@@ -19,8 +19,10 @@ service cloud.firestore {
 
       // --- Subcollection: Daily Data ---
       match /dailyData/{dailyDataId} {
-        // A user can manage their own daily data records.
-        allow read, write: if isOwner(userId) && request.resource.data.userId == userId;
+        // A user can read their own daily data records.
+        allow read: if isOwner(userId);
+        // A user can write to their own daily data records, ensuring data integrity.
+        allow write: if isOwner(userId) && request.resource.data.userId == userId;
       }
     }
 
@@ -28,8 +30,8 @@ service cloud.firestore {
     // Public Leaderboard Rules
     // ----------------------------------------------------------------------
     match /leaderboard/{leaderboardId} {
-      // Anyone can read the leaderboard.
-      allow get, list: if true;
+      // Any signed-in user can read the leaderboard.
+      allow get, list: if isSignedIn();
       // A user can create their own leaderboard entry if the ID matches their UID.
       allow create: if isOwner(leaderboardId) && request.resource.data.userId == request.auth.uid;
       // A user can only update their own leaderboard entry.
