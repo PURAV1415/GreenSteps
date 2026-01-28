@@ -136,12 +136,21 @@ export function AuthForm() {
       router.push('/dashboard');
 
     } catch (error: any) {
-      console.error("Signup Error:", error);
-      toast({
-        variant: "destructive",
-        title: "Signup Failed",
-        description: error.message || "An unexpected error occurred.",
-      });
+       if (error.code === 'auth/operation-not-allowed') {
+        toast({
+          variant: 'destructive',
+          title: 'Operation Not Allowed',
+          description:
+            'Email/Password sign-in is not enabled. Please enable it in the Firebase console.',
+        });
+      } else {
+        console.error("Signup Error:", error);
+        toast({
+          variant: "destructive",
+          title: "Signup Failed",
+          description: error.message || "An unexpected error occurred.",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
