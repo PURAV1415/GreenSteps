@@ -11,10 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Flame, Star, Milestone, Bot, Trophy, Users, Leaf, Route } from 'lucide-react';
-import { doc, collection, query, orderBy, limit, where } from 'firebase/firestore';
+import { doc, collection, query, orderBy, limit } from 'firebase/firestore';
 
 import { useFirebase, useUser, useDoc, useCollection, updateDocumentNonBlocking, setDocumentNonBlocking, useMemoFirebase } from '@/firebase';
-import type { User, DailyData, LeaderboardUser, LeaderboardDepartment, TransportMode } from '@/lib/types';
+import type { User, DailyData, LeaderboardUser } from '@/lib/types';
 import { EMISSION_FACTORS } from '@/lib/constants';
 
 import { fetchEcoRecommendations } from './actions';
@@ -29,13 +29,11 @@ export default function DashboardPage() {
 
   // Memoize Firestore references
   const dailyDataRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'users', authUser.uid, 'dailyData'), orderBy('date', 'desc'), limit(7)) : null, [authUser, firestore]);
-  const departmentLeaderboardRef = useMemoFirebase(() => (authUser && user) ? query(collection(firestore, 'leaderboard'), where('department', '==', user.department)) : null, [authUser, firestore, user]);
-  const campusLeaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard')) : null, [authUser, firestore]);
+  const leaderboardRef = useMemoFirebase(() => authUser ? query(collection(firestore, 'leaderboard')) : null, [authUser, firestore]);
 
   // Fetch data from Firestore
   const { data: dailyHistory, isLoading: isHistoryLoading } = useCollection<DailyData>(dailyDataRef);
-  const { data: departmentLeaderboardData, isLoading: isDeptLeaderboardLoading } = useCollection<LeaderboardUser>(departmentLeaderboardRef);
-  const { data: campusLeaderboardData, isLoading: isCampusLeaderboardLoading } = useCollection<LeaderboardUser>(campusLeaderboardRef);
+  const { data: leaderboardData, isLoading: isLeaderboardLoading } = useCollection<LeaderboardUser>(leaderboardRef);
 
   const [isUpdateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [recommendations, setRecommendations] = useState<string[]>([]);
@@ -105,23 +103,24 @@ export default function DashboardPage() {
   };
   
   const departmentLeaderboard = useMemo(() => {
-    if (!departmentLeaderboardData) return [];
-    return departmentLeaderboardData
+    if (!leaderboardData || !user) return [];
+    return leaderboardData
+      .filter(u => u.department === user.department)
       .sort((a, b) => b.totalPoints - a.totalPoints)
       .slice(0, 10)
       .map((u, i) => ({ ...u, rank: i + 1, isCurrentUser: u.id === authUser?.uid }));
-  }, [departmentLeaderboardData, authUser]);
+  }, [leaderboardData, authUser, user]);
 
   const campusLeaderboard = useMemo(() => {
-    if (!campusLeaderboardData) return [];
+    if (!leaderboardData) return [];
     const departmentTotals: Record<string, number> = {};
-    campusLeaderboardData.forEach(user => {
-        departmentTotals[user.department] = (departmentTotals[user.department] || 0) + user.totalPoints;
+    leaderboardData.forEach(userEntry => {
+        departmentTotals[userEntry.department] = (departmentTotals[userEntry.department] || 0) + userEntry.totalPoints;
     });
     return Object.entries(departmentTotals)
         .sort(([, a], [, b]) => b - a)
         .map(([department, totalPoints], i) => ({ rank: i + 1, department, totalPoints }));
-  }, [campusLeaderboardData]);
+  }, [leaderboardData]);
 
 
   if (isAuthUserLoading || isUserLoading) {
@@ -261,7 +260,7 @@ export default function DashboardPage() {
                 <TabsTrigger value="campus"><Trophy className="mr-2 h-4 w-4"/>Campus</TabsTrigger>
               </TabsList>
               <TabsContent value="department">
-                {isDeptLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
+                {isLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -285,7 +284,7 @@ export default function DashboardPage() {
                 )}
               </TabsContent>
               <TabsContent value="campus">
-                 {isCampusLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
+                 {isLeaderboardLoading ? <Skeleton className="h-40 mt-4" /> : (
                   <Table>
                     <TableHeader>
                       <TableRow>
