@@ -1,6 +1,6 @@
-# EcoTrack - Campus Carbon Footprint Tracker
+# GreenSteps - Campus Carbon Footprint Tracker
 
-EcoTrack is a web application designed to help university students and staff track and reduce their carbon footprint. By logging their daily travel, users can visualize their environmental impact, earn points for eco-friendly choices, and compete with others on campus to be more sustainable. The app also provides personalized, AI-powered recommendations to help users make greener choices.
+GreenSteps is a web application designed to help university students and staff track and reduce their carbon footprint. By logging their daily travel, users can visualize their environmental impact, earn points for eco-friendly choices, and compete with others on campus to be more sustainable. The app also provides personalized, AI-powered recommendations to help users make greener choices.
 
 ## ✨ Features
 

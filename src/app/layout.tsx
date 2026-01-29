@@ -5,7 +5,7 @@ import './globals.css';
 import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata: Metadata = {
-  title: 'EcoTrack',
+  title: 'GreenSteps',
   description: 'Campus Carbon Footprint Tracker',
 };
 

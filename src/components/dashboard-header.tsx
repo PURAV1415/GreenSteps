@@ -38,7 +38,7 @@ export function DashboardHeader() {
           className="flex items-center gap-2 text-lg font-semibold md:text-base font-headline"
         >
           <Leaf className="h-6 w-6 text-primary" />
-          <span>EcoTrack</span>
+          <span>GreenSteps</span>
         </Link>
       </nav>
       <Sheet>
@@ -59,7 +59,7 @@ export function DashboardHeader() {
               className="flex items-center gap-2 text-lg font-semibold font-headline"
             >
               <Leaf className="h-6 w-6 text-primary" />
-              <span>EcoTrack</span>
+              <span>GreenSteps</span>
             </Link>
           </nav>
         </SheetContent>
